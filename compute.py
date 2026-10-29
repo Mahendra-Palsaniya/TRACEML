@@ -219,7 +219,7 @@ class ThreatPipeline:
         attack_label = np.array(["BENIGN"] * len(rows), dtype=object)
         attack_conf = np.zeros(len(rows), dtype=np.float32)
 
-        if flags.any():
+        if flags.any() and self.moe is not None:
             flagged_rows = [rows[i] for i, f in enumerate(flags) if f]
             labels, probs = self.moe.predict_batch(flagged_rows)  # probs: [K,3]
             confs = probs.max(axis=1)
@@ -230,6 +230,9 @@ class ThreatPipeline:
                     attack_label[i] = labels[k]
                     attack_conf[i] = float(confs[k])
                     k += 1
+
+        if flags.any() and self.moe is None:
+            attack_label[flags] = "UNAVAILABLE"
 
         results = []
         for i in range(len(rows)):
@@ -260,7 +263,12 @@ vae_feature_names = meta["feature_names"]
 assert len(vae_feature_names) == 77, f"Expected 77, got {len(vae_feature_names)}"
 
 vae = VAEScorer()
-moe = MoEPredictor()
+MOE_ERROR = None
+try:
+    moe = MoEPredictor()
+except Exception as exc:
+    MOE_ERROR = f"MoE unavailable: {type(exc).__name__}: {exc}"
+    moe = None
 PIPELINE = ThreatPipeline(vae, moe, vae_feature_names)
 
 
@@ -279,7 +287,7 @@ def validate_rows(rows):
 
     for i, r in enumerate(rows):
         mv = _missing_keys(r, vae_feature_names)
-        mm = _missing_keys(r, PIPELINE.moe.FEATURE_COLUMNS)
+        mm = _missing_keys(r, PIPELINE.moe.FEATURE_COLUMNS) if PIPELINE.moe is not None else []
         if mv: vae_missing[i] = mv[:10]
         if mm: moe_missing[i] = mm[:10]
 
@@ -291,6 +299,22 @@ def predict(rows): # For API, the API can call this function
         rows: list[dict] raw CICIDS features
         returns: json of results and input_issues
     """
+    if not rows or len(rows) > 5000:
+        raise ValueError("Provide between 1 and 5000 rows")
     issues = validate_rows(rows)
+    if issues["vae_missing"] or issues["moe_missing"]:
+        raise ValueError(f"Missing required features: {issues}")
+    for i, row in enumerate(rows):
+        for name in vae_feature_names:
+            try:
+                value = float(row[name])
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ValueError(f"Row {i}: invalid feature {name!r}") from exc
+            if not np.isfinite(value):
+                raise ValueError(f"Row {i}: non-finite feature {name!r}")
     results = PIPELINE.predict_batch(rows)
     return {"results": results, "input_issues": issues}
+
+
+def model_status():
+    return {"vae": "ready", "moe": "ready" if moe is not None else "unavailable", "moe_error": MOE_ERROR}
