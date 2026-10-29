@@ -14,6 +14,9 @@ def build_client(monkeypatch):
     fake.vae_feature_names = ["required"]
     fake.PIPELINE = types.SimpleNamespace(moe=None)
     monkeypatch.setitem(sys.modules, "compute", fake)
+    fake_llm = types.ModuleType("llm")
+    fake_llm.summarize_alert = lambda *_: {}
+    monkeypatch.setitem(sys.modules, "llm", fake_llm)
     sys.modules.pop("main", None)
     app = importlib.import_module("main").app
     return TestClient(app)
