@@ -1,11 +1,12 @@
 import os
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 import compute
 import json
 from llm import summarize_alert
 from pydantic import BaseModel
 from typing import Any, Dict, List
+from fastapi.responses import JSONResponse
 import pandas as pd
 import random
 
@@ -46,6 +47,11 @@ def get_random_row_from_csv():
     random_row = df.sample(1).to_dict(orient="records")[0]
     return random_row
 app = FastAPI()
+
+@app.exception_handler(ValueError)
+async def invalid_feature_handler(request: Request, exc: ValueError):
+    return JSONResponse(status_code=422, content={"detail": str(exc)[:500]})
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -274,7 +280,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=413, detail="CSV exceeds 5 MiB limit")
     try:
         reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
-        required = list(dict.fromkeys(compute.vae_feature_names + (compute.PIPELINE.moe.FEATURE_COLUMNS if compute.PIPELINE.moe is not None else [])))
+        required = list(dict.fromkeys(compute.vae_feature_names + compute.MOE_FEATURE_COLUMNS))
         if not reader.fieldnames:
             raise ValueError("CSV has no header")
         missing = [name for name in required if name not in reader.fieldnames]
