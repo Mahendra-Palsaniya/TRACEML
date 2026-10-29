@@ -1,7 +1,7 @@
-"""Restore the trusted original LightGBM artifact from a local TRACE ZIP.
+"""Restore the original LightGBM artifact from a trusted local .pkl or ZIP.
 
-Run in a Git checkout. This script writes only artifacts/lgb.pkl; it does not
-commit, push, or load pickle code. Review the resulting Git diff before commit.
+Verifies SHA-256 before writing. Does not deserialize pickle or push to GitHub.
+Only use a file whose provenance you trust.
 """
 import hashlib
 import sys
@@ -14,16 +14,26 @@ ARCHIVE_MEMBER = "TRACE-ML-main/artifacts/lgb.pkl"
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: python scripts/restore_lgb_from_zip.py /path/to/TRACE-ML-main.zip")
+        print("Usage: python scripts/restore_lgb_from_zip.py /path/to/lgb.pkl|TRACE-ML-main.zip")
         return 2
-    archive = Path(sys.argv[1])
-    target = Path(__file__).resolve().parents[1] / "artifacts" / "lgb.pkl"
-    with zipfile.ZipFile(archive) as z:
-        data = z.read(ARCHIVE_MEMBER)
+    source = Path(sys.argv[1])
+    if not source.is_file():
+        print(f"ERROR: source not found: {source}")
+        return 1
+    try:
+        if source.suffix.lower() == ".zip":
+            with zipfile.ZipFile(source) as archive:
+                data = archive.read(ARCHIVE_MEMBER)
+        else:
+            data = source.read_bytes()
+    except (OSError, KeyError, zipfile.BadZipFile) as exc:
+        print(f"ERROR: could not read source: {exc}")
+        return 1
     digest = hashlib.sha256(data).hexdigest()
     if digest != EXPECTED_SHA256:
-        print("ERROR: original artifact SHA-256 mismatch; refusing restoration")
+        print(f"ERROR: SHA-256 mismatch ({digest}); refusing restoration")
         return 1
+    target = Path(__file__).resolve().parents[1] / "artifacts" / "lgb.pkl"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     print(f"Restored {target}: {len(data)} bytes, sha256={digest}")
