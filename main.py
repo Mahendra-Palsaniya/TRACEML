@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import compute
 import json
@@ -52,6 +52,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -258,3 +260,36 @@ def random_analyze():
         "model_output": result0,
         "llm_payload": llm_payload
     }
+
+@app.post("/analyze-csv")
+async def analyze_csv(file: UploadFile = File(...)):
+    """Analyze up to 1,000 CICIDS flow records in a CSV file."""
+    import csv
+    import io
+    import math
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="A .csv file is required")
+    raw = await file.read(5 * 1024 * 1024 + 1)
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="CSV exceeds 5 MiB limit")
+    try:
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        required = list(dict.fromkeys(compute.vae_feature_names + compute.PIPELINE.moe.FEATURE_COLUMNS))
+        if not reader.fieldnames:
+            raise ValueError("CSV has no header")
+        missing = [name for name in required if name not in reader.fieldnames]
+        if missing:
+            raise ValueError("Missing feature columns: " + ", ".join(missing[:12]))
+        rows = []
+        for record in reader:
+            if len(rows) >= 1000:
+                raise ValueError("CSV exceeds 1,000-row limit")
+            row = {key: float(record[key]) for key in required}
+            if not all(math.isfinite(v) for v in row.values()):
+                raise ValueError("Non-finite numeric feature")
+            rows.append(row)
+        if not rows:
+            raise ValueError("CSV has no data rows")
+    except (UnicodeDecodeError, ValueError, TypeError, KeyError, csv.Error) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return compute.predict(rows)
