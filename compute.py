@@ -96,7 +96,9 @@ class MoEPredictor:
         self.gating.eval()
 
         # must match training exactly
-        self.FEATURE_COLUMNS = [
+        self.FEATURE_COLUMNS = MOE_FEATURE_COLUMNS
+        # Original feature order retained in MOE_FEATURE_COLUMNS.
+        _original_feature_order = [
             "Dst Port", "Flow Duration", "Tot Fwd Pkts", "Tot Bwd Pkts",
             "TotLen Fwd Pkts", "Fwd Pkt Len Max", "Fwd Pkt Len Min", "Fwd Pkt Len Mean",
             "Bwd Pkt Len Max", "Bwd Pkt Len Min", "Bwd Pkt Len Mean",
@@ -111,6 +113,7 @@ class MoEPredictor:
             "Fwd Seg Size Min", "Active Mean", "Active Std",
             "Active Max", "Idle Min"
         ]
+        assert _original_feature_order == MOE_FEATURE_COLUMNS
 
     def _dicts_to_matrix(self, rows):
         X = np.zeros((len(rows), len(self.FEATURE_COLUMNS)), dtype=np.float32)
@@ -257,6 +260,21 @@ class ThreatPipeline:
         return results
 
 
+MOE_FEATURE_COLUMNS = [
+    "Dst Port", "Flow Duration", "Tot Fwd Pkts", "Tot Bwd Pkts",
+    "TotLen Fwd Pkts", "Fwd Pkt Len Max", "Fwd Pkt Len Min", "Fwd Pkt Len Mean",
+    "Bwd Pkt Len Max", "Bwd Pkt Len Min", "Bwd Pkt Len Mean",
+    "Flow Byts/s", "Flow Pkts/s", "Flow IAT Mean", "Flow IAT Std",
+    "Flow IAT Max", "Bwd IAT Tot", "Bwd IAT Mean", "Bwd IAT Std", "Bwd IAT Min",
+    "Fwd PSH Flags", "Bwd PSH Flags", "Fwd URG Flags", "Bwd URG Flags",
+    "Pkt Len Var", "FIN Flag Cnt", "RST Flag Cnt", "PSH Flag Cnt",
+    "ACK Flag Cnt", "URG Flag Cnt", "CWE Flag Count", "Down/Up Ratio",
+    "Fwd Byts/b Avg", "Fwd Pkts/b Avg", "Fwd Blk Rate Avg",
+    "Bwd Byts/b Avg", "Bwd Pkts/b Avg", "Bwd Blk Rate Avg",
+    "Init Fwd Win Byts", "Init Bwd Win Byts", "Fwd Act Data Pkts",
+    "Fwd Seg Size Min", "Active Mean", "Active Std", "Active Max", "Idle Min"
+]
+
 vae_names_path = os.path.join(ART_DIR, "features_name.json")
 with open(vae_names_path, "r") as f:
     meta = json.load(f)
@@ -289,7 +307,7 @@ def validate_rows(rows):
 
     for i, r in enumerate(rows):
         mv = _missing_keys(r, vae_feature_names)
-        mm = _missing_keys(r, MoEPredictor.FEATURE_COLUMNS) if hasattr(MoEPredictor, "FEATURE_COLUMNS") else []
+        mm = _missing_keys(r, MOE_FEATURE_COLUMNS)
         if mv: vae_missing[i] = mv[:10]
         if mm: moe_missing[i] = mm[:10]
 
