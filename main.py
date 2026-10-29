@@ -47,6 +47,13 @@ def get_random_row_from_csv():
     return random_row
 app = FastAPI()
 
+
+@app.exception_handler(ValueError)
+async def invalid_input_handler(request, exc: ValueError):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -231,7 +238,7 @@ def analyze(req: RowIn):
 
 @app.post("/summarize")
 def summarize(req: dict):
-    if "llm_payload" not in req or "model_output" not in req:
+    if not isinstance(req.get("llm_payload"), dict) or not isinstance(req.get("model_output"), dict):
         raise HTTPException(status_code=400, detail="Need llm_payload and model_output")
 
     return summarize_alert(req["llm_payload"], req["model_output"])
@@ -269,7 +276,10 @@ async def analyze_csv(file: UploadFile = File(...)):
     import math
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="A .csv file is required")
-    raw = await file.read(5 * 1024 * 1024 + 1)
+    try:
+        raw = await file.read(5 * 1024 * 1024 + 1)
+    finally:
+        await file.close()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="CSV exceeds 5 MiB limit")
     try:
