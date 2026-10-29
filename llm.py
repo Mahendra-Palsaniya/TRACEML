@@ -7,7 +7,7 @@ load_dotenv()
 
 api_key = os.getenv("GOOGLE_API_KEY")
 
-LLM = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.2, api_key=api_key)
+LLM = None  # Initialize lazily only when an API key is configured
 SYSTEM_PROMPT = """You are a cybersecurity SOC analyst assistant. You will receive JSON with keys: "llm_payload" 
     and "model_output". Use "llm_payload" as the primary source.
     Use "model_output" only if it adds helpful detail. Do not invent information. describing one
@@ -96,7 +96,7 @@ def summarize_alert(llm_payload: dict, model_output: dict) -> dict:
         }
 
     try:
-        LLM = ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.2, api_key=api_key)
+        LLM = ChatGoogleGenerativeAI(model=os.getenv("TRACE_GEMINI_MODEL", "gemini-2.5-flash"), temperature=0.2, api_key=api_key)
         messages = [
             ("system", SYSTEM_PROMPT),
             ("user", USER_TEMPLATE.format(
