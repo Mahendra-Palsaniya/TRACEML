@@ -14,7 +14,8 @@ from xgboost import XGBClassifier
 import lightgbm as lgb
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ART_DIR = os.path.join(BASE_DIR, "artifacts")
+ART_DIR = os.getenv("TRACE_ARTIFACT_DIR", os.path.join(BASE_DIR, "artifacts"))
+MAX_BATCH_ROWS = int(os.getenv("TRACE_MAX_BATCH_ROWS", "1000"))
 
 
 class SmallMLP(nn.Module):
@@ -62,7 +63,7 @@ class MoEPredictor:
         if moe_dir is None:
             moe_dir = os.path.join(ART_DIR, "moeModels") if os.path.isdir(os.path.join(ART_DIR, "moeModels")) else ART_DIR
         self.moe_dir = moe_dir
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(os.getenv("TRACE_DEVICE", "cpu"))
 
         # preprocessing
         self.scaler = joblib.load(os.path.join(moe_dir, "scaler.pkl"))
@@ -83,15 +84,15 @@ class MoEPredictor:
 
         # torch experts
         self.small_mlp = SmallMLP().to(self.device)
-        self.small_mlp.load_state_dict(torch.load(os.path.join(moe_dir, "small_mlp.pt"), map_location=self.device))
+        self.small_mlp.load_state_dict(torch.load(os.path.join(moe_dir, "small_mlp.pt"), map_location=self.device, weights_only=True))
         self.small_mlp.eval()
 
         self.deep_mlp = DeepMLP().to(self.device)
-        self.deep_mlp.load_state_dict(torch.load(os.path.join(moe_dir, "deep_mlp.pt"), map_location=self.device))
+        self.deep_mlp.load_state_dict(torch.load(os.path.join(moe_dir, "deep_mlp.pt"), map_location=self.device, weights_only=True))
         self.deep_mlp.eval()
 
         self.gating = GatingNetwork().to(self.device)
-        self.gating.load_state_dict(torch.load(os.path.join(moe_dir, "gating.pt"), map_location=self.device))
+        self.gating.load_state_dict(torch.load(os.path.join(moe_dir, "gating.pt"), map_location=self.device, weights_only=True))
         self.gating.eval()
 
         # must match training exactly
@@ -115,7 +116,7 @@ class MoEPredictor:
         X = np.zeros((len(rows), len(self.FEATURE_COLUMNS)), dtype=np.float32)
         for i, r in enumerate(rows):
             for j, c in enumerate(self.FEATURE_COLUMNS):
-                X[i, j] = float(r.get(c, 0.0))
+                X[i, j] = float(r[c])
         return X
 
     @torch.no_grad()
@@ -161,7 +162,7 @@ class VAEScorer:
         # model
         self.model = Model(input_dim=input_dim, hidden_dim=hidden_dim, latent_dim=latent_dim).to(self.device)
         ckpt_path = os.path.join(ART_DIR, "model.pth")
-        self.model.load_state_dict(torch.load(ckpt_path, map_location=self.device))
+        self.model.load_state_dict(torch.load(ckpt_path, map_location=self.device, weights_only=True))
         self.model.eval()
 
         # threshold
@@ -175,7 +176,8 @@ class VAEScorer:
     @torch.no_grad()
     def score_scaled(self, X_scaled_np: np.ndarray):
         xb = torch.from_numpy(X_scaled_np.astype(np.float32)).to(self.device, non_blocking=True)
-        recon, mu, logvar = self.model(xb)
+        mu, logvar = self.model.encode(xb)
+        recon = self.model.decoder(mu)  # deterministic inference, no latent sampling
 
         se = (recon - xb) ** 2
         scores = se.sum(dim=1)
@@ -267,7 +269,7 @@ MOE_ERROR = None
 try:
     moe = MoEPredictor()
 except Exception as exc:
-    MOE_ERROR = f"MoE unavailable: {type(exc).__name__}: {exc}"
+    MOE_ERROR = f"MoE unavailable: {type(exc).__name__}"
     moe = None
 PIPELINE = ThreatPipeline(vae, moe, vae_feature_names)
 
@@ -287,7 +289,7 @@ def validate_rows(rows):
 
     for i, r in enumerate(rows):
         mv = _missing_keys(r, vae_feature_names)
-        mm = _missing_keys(r, PIPELINE.moe.FEATURE_COLUMNS) if PIPELINE.moe is not None else []
+        mm = _missing_keys(r, MoEPredictor.FEATURE_COLUMNS) if hasattr(MoEPredictor, "FEATURE_COLUMNS") else []
         if mv: vae_missing[i] = mv[:10]
         if mm: moe_missing[i] = mm[:10]
 
@@ -299,8 +301,8 @@ def predict(rows): # For API, the API can call this function
         rows: list[dict] raw CICIDS features
         returns: json of results and input_issues
     """
-    if not rows or len(rows) > 5000:
-        raise ValueError("Provide between 1 and 5000 rows")
+    if not rows or len(rows) > MAX_BATCH_ROWS:
+        raise ValueError(f"Provide between 1 and {MAX_BATCH_ROWS} rows")
     issues = validate_rows(rows)
     if issues["vae_missing"] or issues["moe_missing"]:
         raise ValueError(f"Missing required features: {issues}")
