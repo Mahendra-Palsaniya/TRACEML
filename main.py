@@ -238,7 +238,7 @@ def summarize(req: dict):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok" if compute.moe is not None else "degraded", "models": compute.model_status()}
 
 @app.get("/random-analyze")
 def random_analyze():
@@ -274,7 +274,7 @@ async def analyze_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=413, detail="CSV exceeds 5 MiB limit")
     try:
         reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
-        required = list(dict.fromkeys(compute.vae_feature_names + compute.PIPELINE.moe.FEATURE_COLUMNS))
+        required = list(dict.fromkeys(compute.vae_feature_names + (compute.PIPELINE.moe.FEATURE_COLUMNS if compute.PIPELINE.moe is not None else [])))
         if not reader.fieldnames:
             raise ValueError("CSV has no header")
         missing = [name for name in required if name not in reader.fieldnames]
