@@ -47,3 +47,5 @@ joblib
 xgboost
 lightgbm
 
+
+python-multipart
