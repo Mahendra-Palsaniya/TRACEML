@@ -239,7 +239,7 @@ def analyze(req: RowIn):
 @app.post("/summarize")
 def summarize(req: dict):
     if not isinstance(req.get("llm_payload"), dict) or not isinstance(req.get("model_output"), dict):
-        raise HTTPException(status_code=400, detail="Need llm_payload and model_output")
+        raise HTTPException(status_code=422, detail="llm_payload and model_output must be objects")
 
     return summarize_alert(req["llm_payload"], req["model_output"])
 
