@@ -3,6 +3,7 @@
 Does not overwrite existing pretrained models. Not proof of real-world accuracy.
 """
 import argparse
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -27,7 +28,12 @@ def main():
     if args.dataset.name == "cicids_sample.csv" and not args.allow_synthetic_demo:
         parser.error("Synthetic demo CSV requires --allow-synthetic-demo; results are not real-world metrics")
 
-    from compute import MOE_FEATURE_COLUMNS
+    source = (Path(__file__).resolve().parents[1] / "run_pipeline.py").read_text()
+    tree = ast.parse(source)
+    MOE_FEATURE_COLUMNS = next(ast.literal_eval(node.value) for node in tree.body
+                               if isinstance(node, ast.Assign) and
+                               any(isinstance(target, ast.Name) and target.id == "MOE_FEATURE_NAMES"
+                                   for target in node.targets))
     required = MOE_FEATURE_COLUMNS + ["Label"]
     frame = pd.read_csv(args.dataset)
     missing = [x for x in required if x not in frame.columns]
