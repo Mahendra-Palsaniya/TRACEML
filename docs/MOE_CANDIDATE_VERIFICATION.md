@@ -43,3 +43,7 @@ The original `lgb.pkl` (1,057,132 bytes) loads locally, but the GitHub copy at `
 3. Obtain a provenance-controlled held-out dataset not used to train any expert or the gate.
 4. Test complete VAE-to-MoE pipeline, including saved threshold and feature mapping, on committed code.
 5. Run CI and Docker tests; only then merge inference changes.
+
+## VAE-to-MoE integration smoke test (additional local run)
+
+Using the original VAE checkpoint, original feature metadata, original gate and seven experts, and the isolated candidate RF, `ThreatPipeline.predict_batch` processed the first 64 rows of the synthetic demo CSV. **64 results** were returned, **20 anomaly flags**, **20 classified flagged flows**, and all anomaly scores were finite. Output keys: `is_anomaly`, `score`, `threshold`, `attack_type`, `attack_confidence`, `top_contributors`. Attack labels across 64 results: `BENIGN=44`, `SSH-Bruteforce=11`, `FTP-BruteForce=8`, `Benign=1`. This last `Benign` label on a VAE-flagged flow is a real observed VAE/MoE disagreement, not a test failure; it needs explicit UI handling. **This is not a GitHub-branch test or independent accuracy evaluation.**
