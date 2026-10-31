@@ -109,11 +109,11 @@ def summarize_alert(llm_payload: dict, model_output: dict) -> dict:
     except Exception as e:
         return {
             "severity": "medium",
-            "summary": f"LLM API Call Error: {str(e)}",
+            "summary": "LLM explanation unavailable; rule-based fallback in use.",
             "what_is_wrong": ["LLM API invocation failed."],
             "evidence": [],
             "attack_assessment": {"predicted_type": llm_payload.get("attack_type", "BENIGN"), "confidence": llm_payload.get("attack_confidence", 0.0), "interpretation": "API call fallback."},
             "recommended_actions": {"immediate": ["Check API credentials"], "short_term": [], "long_term": []},
             "questions_to_ask": [],
-            "limitations": [str(e)]
+            "limitations": ["External explanation service failed; no generated explanation is available."]
         }
